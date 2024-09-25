@@ -1,130 +1,76 @@
-import { Request, Response } from "express"
-import { PrismaClient } from "prisma/prisma-client";
+import { join } from "@prisma/client/runtime/library";
+import { NextFunction, Request, Response } from "express";
+import Joi from "joi";
+import path from "path";
+import fs from "fs"
+import { ROOT_DIRECTORY } from "../config";
 
-/**create object of prisma */
-const prisma = new PrismaClient({ errorFormat: "minimal" })
-type Drugtype = "Syrup" | "Tablet" | "Powder"
-const createMedicine = async (req: Request, res: Response) => {
-    try {
-        const name: string = req.body.name
-        const stock: number = Number(req.body.stock)
-        const exp_date: Date = new Date(req.body.exp_date)
-        const price: number = Number(req.body.price)
-        const type: Drugtype = req.body.type
+//create a rule/schema for add new medicine 
+const createScheme = Joi.object( {
+    name: Joi.string().required(),
+    stock: Joi.number().min(0).required(),
+    price: Joi.number().min(1).required(),
+    exp_date: Joi.date().required(),
+    type: Joi.string().valid("Syrup","Tablet", "Powder").required()
 
-        const newMedicine = await prisma.medicine.create({
-            data: {
-                name, stock, exp_date, price, type
-            }
-        })
-        return res.status(200)
-            .json({
-                message: `New medicine has been created`,
-                data: newMedicine
-            })
-    } catch (error) {
-        return res.status(500)
-            .json(error)
-    }
-}
+} )
 
-const readMedicine = async (
-    req: Request,
-    res: Response
-) => {
-    try {
-        const search = req.query.search
-        /**get on medicine */
-        const allMedicine = await prisma.medicine
-            .findMany({
-                where: {
-                    OR: [
-                        {name: { contains: search?.toString() || " " }},
-                    ]
-                }
-            })
-        return res.status(200)
-            .json({
-                message: `medicine has been retrieved`,
-                data: allMedicine
-            })
-    } catch (error) {
-        res.status(500)
-            .json(error)
-    }
-}
+const createValidation = (req: Request, res: Response, next: NextFunction) => {
+    const validate =  createScheme.validate(req.body)
+    if (validate.error) {
+        /** delete current uploaded file */
+        let fileName:string = req.file?.filename || ``
+        let pathFile = path.join(ROOT_DIRECTORY,"public","medicine-photo",fileName)
+        /** cek eksistensi filenya */
+        let fileExists = fs.existsSync(pathFile)
+        /** apakah ada file yang akan dihapus */
 
-const updateMedicine = async (req: Request, res: Response) => {
-    try {
-        const id = req.params.id
-
-        /**cek kevalidan id */
-        const findMedicine = await prisma.medicine
-            .findFirst({ where: { id: Number(id) } })
-        if (!findMedicine) {
-            return res.status(200)
-                .json({
-                    message: `Medicine is not found`
-                })
+        if(fileExists && fileName !== ``){
+            fs.unlinkSync(pathFile)
         }
-
-        /**read property of medicine from req.body */
-        const {
-            name, stock, price, type, exp_date
-        } = req.body
-
-        /**update medicine */
-        const saveMedicine = await prisma.medicine
-            .update({
-                where: { id: Number(id) },
-                data: {
-                    name: name ?? findMedicine.name,
-                    stock: stock ? Number(stock) : findMedicine.stock,
-                    price: price ? Number(price) : findMedicine.price,
-                    exp_date: exp_date ? new Date(exp_date) : findMedicine.exp_date,
-                    type: type ? type : findMedicine.type
-                }
-            })
-        return res.status(200)
-            .json({
-                message: `medicine has been updateMedicine`,
-                data: saveMedicine
-            })
-    } catch (error) {
-        return res.status(500)
-            .json(error)
+        return res.status(400).json({
+            message: validate
+            .error
+            .details
+            .map(item => item.message)
+            .join()
+        })
     }
+    next()
+}
+//create a rule/schema for add new medicine 
+const updateScheme = Joi.object( {
+    name: Joi.string().optional(),
+    stock: Joi.number().min(0).optional(),
+    price: Joi.number().min(1).optional(),
+    exp_date: Joi.date().optional(),
+    type: Joi.string().valid("Syrup","Tablet", "Powder").optional()
+
+} )
+
+const updateValidation = (req: Request, res: Response, next: NextFunction) => {
+    const validate =  updateScheme.validate(req.body)
+    if (validate.error) {
+        
+           // 400: Bad request
+           let fileName:string = req.file?.filename || ``
+           let pathFile = path.join(ROOT_DIRECTORY,"public","medicine-photo",fileName)
+           //** cek eksistensi filenya */
+           let fileExists = fs.existsSync(pathFile)
+   
+           if(fileExists && fileName !== ``){
+               fs.unlinkSync(pathFile)
+           }
+
+        return res.status(400).json({
+            message: validate
+            .error
+            .details
+            .map(item => item.message)
+            .join()
+        })
+    }
+    next()
 }
 
-const deleteMedicine = async (req: Request, res: Response) => {
-    try {
-        const id = req.params.id
-
-        /** check existing medicine */
-        const findMedicine = await prisma.medicine.findFirst
-            ({
-                where: {
-                    id: Number(id)
-                }
-            })
-
-        if (!findMedicine) {
-            return res.status(200)
-                .json({ message: `medicine is not found` })
-        }
-
-        /** delete medicine  */
-        const saveMedicine = await prisma.medicine.delete({
-            where: { id: Number(id) }
-        })
-
-        return res.status(200).json({
-            message: `medicine has been removed`,
-            data: saveMedicine
-        })
-    } catch (error) {
-        return res.status(500).json(error)
-    }
-}
-
-export { createMedicine, readMedicine, updateMedicine, deleteMedicine };
+export { createValidation,updateValidation  }
